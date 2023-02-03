@@ -1,8 +1,16 @@
 CC = gcc
 CFLAGS = -g -Wall
+INCLUDES = -I controller/includes
 
+default: controller
 
-bin/controller: controller/main.c
-	mkdir -p ./bin
-	$(CC) $(CFLAGS) -o ./bin/controller controller/main.c
+%.o: controller/%.c
+	mkdir -p bin
+	$(CC) $(CFLAGS) $(INCLUDES) -o bin/$@ -c $^
+
+controller: main.o net_interface_utils.o
+	$(CC) $(CFLAGS) -o bin/controller $(addprefix bin/,$^)
+
+clean:
+	$(RM) bin/*
 
