@@ -1,0 +1,1 @@
+getting linux interface MACs: https://man7.org/linux/man-pages/man3/getifaddrs.3.html
