@@ -5,10 +5,13 @@
 #include <linux/if_link.h>
 #include <netdb.h>
 #include <net/if.h>
+#include <string.h>
+#include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 
 void printNetworkInterfaces() {
     struct ifaddrs *ifaddr;
@@ -60,6 +63,39 @@ void printNetworkInterfaces() {
     freeifaddrs(ifaddr);
 }
 
+int findInterfaceAddress(const char *interface_name, char address[NI_MAXHOST]) {
+    struct ifaddrs *ifaddr;
+    int family, s;
 
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        return -1;
+    }
+
+    for (struct ifaddrs *ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+
+        if (strcmp(interface_name, ifa->ifa_name) != 0)
+            continue;
+
+        family = ifa->ifa_addr->sa_family;
+        if (family == AF_INET || family == AF_INET6) {
+            s = getnameinfo(ifa->ifa_addr,
+                    (family == AF_INET) ? sizeof(struct sockaddr_in) :
+                                          sizeof(struct sockaddr_in6),
+                                          address, NI_MAXHOST,
+                                          NULL, 0, NI_NUMERICHOST);
+            if (s != 0) {
+                fprintf(stderr, "getnameinfo() failed: %s\n", gai_strerror(s));
+                return -1;
+            }
+            return 0;
+        }
+    } 
+
+    // interface with the same name not found
+    return -1;
+}
 
 
