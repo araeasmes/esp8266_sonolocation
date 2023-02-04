@@ -10,15 +10,18 @@
 int main(int argc, char **argv) {
     assert(argc > 1);        
     const char *interface_name = argv[1];
-    char address[MAX_ADDRESS_LEN];
-    explicit_bzero(address, MAX_ADDRESS_LEN);
+
+    unsigned char addr_len;
+    unsigned char address[8];
+    explicit_bzero(address, 8);
 
     printNetworkInterfaces();
-    int find_res = findInterfaceAddress(interface_name, address);
+    int find_res = findInterfaceMAC(interface_name, address, &addr_len);
 
-    if (find_res == 0)
-        printf("address = %s\n", address);
-    else 
+    if (find_res == 0) {
+        printMAC(address, addr_len);
+        printf("\n");
+     } else 
         printf("failed to find the interface\n");
 
     exit(EXIT_SUCCESS);

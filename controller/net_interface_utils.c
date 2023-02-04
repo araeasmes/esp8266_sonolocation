@@ -4,6 +4,7 @@
 #include <ifaddrs.h>
 #include <linux/if_link.h>
 #include <netdb.h>
+#include <netpacket/packet.h>
 #include <net/if.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,6 +13,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+
+void printMAC(const unsigned char *addr, int len) {
+    if (len <= 0)
+        return;
+    int i;
+    for (i = 0; i < len - 1; i++) {
+        printf("%02x:", addr[i]);
+    }
+    printf("%02x", addr[len - 1]);
+}
 
 void printNetworkInterfaces() {
     struct ifaddrs *ifaddr;
@@ -36,7 +47,7 @@ void printNetworkInterfaces() {
                 (family == AF_INET) ? "AF_INET" : 
                 (family == AF_INET6) ? "AF_INET6" : "family unkonwn",
                 family);
-        
+
         // display interface address
         if (family == AF_INET || family == AF_INET6) {
             s = getnameinfo(ifa->ifa_addr,
@@ -51,8 +62,12 @@ void printNetworkInterfaces() {
 
             printf("\t\taddress: <%s>\n", host);
         } else if (family == AF_PACKET && ifa->ifa_data != NULL) {
-            struct rtnl_link_stats *stats = ifa->ifa_data;
+            // display the mac (?)
+            struct sockaddr_ll *sll = (struct sockaddr_ll*) ifa->ifa_addr;
+            printMAC(sll->sll_addr, sll->sll_halen);
+            printf("\n");
 
+            struct rtnl_link_stats *stats = ifa->ifa_data;
             printf("\t\ttx_packets = %10u; rx_packets = %10u\n"
                    "\t\ttx_bytes   = %10u;  rx_bytes  = %10u\n",
                    stats->tx_packets, stats->rx_packets,
@@ -63,9 +78,11 @@ void printNetworkInterfaces() {
     freeifaddrs(ifaddr);
 }
 
-int findInterfaceAddress(const char *interface_name, char address[NI_MAXHOST]) {
+int findInterfaceMAC(const char *interface_name, 
+                     unsigned char address[8], unsigned char *addr_len) {
     struct ifaddrs *ifaddr;
-    int family, s;
+    int family;
+    struct sockaddr_ll *sll;
 
     if (getifaddrs(&ifaddr) == -1) {
         perror("getifaddrs");
@@ -80,16 +97,17 @@ int findInterfaceAddress(const char *interface_name, char address[NI_MAXHOST]) {
             continue;
 
         family = ifa->ifa_addr->sa_family;
-        if (family == AF_INET || family == AF_INET6) {
-            s = getnameinfo(ifa->ifa_addr,
-                    (family == AF_INET) ? sizeof(struct sockaddr_in) :
-                                          sizeof(struct sockaddr_in6),
-                                          address, NI_MAXHOST,
-                                          NULL, 0, NI_NUMERICHOST);
-            if (s != 0) {
-                fprintf(stderr, "getnameinfo() failed: %s\n", gai_strerror(s));
-                return -1;
-            }
+        if (family == AF_PACKET) {
+            sll = (struct sockaddr_ll*) ifa->ifa_addr;
+            
+            // is this check even needed?
+            if (sll->sll_halen == 0)
+                continue;
+
+            *addr_len = sll->sll_halen; 
+            for (int i = 0; i < sll->sll_halen; i++)
+                address[i] = sll->sll_addr[i];
+
             return 0;
         }
     } 
