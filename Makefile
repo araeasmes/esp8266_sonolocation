@@ -1,16 +1,19 @@
 CC = gcc
 CFLAGS = -g -Wall
-INCLUDES = -I controller/include
+INCLUDES = controller/include
 
-default: controller
+all: receiver controller
 
-%.o: controller/%.c
-	mkdir -p bin
-	$(CC) $(CFLAGS) $(INCLUDES) -o bin/$@ -c $^
+controller: controller_dummy
+	make -C controller
 
-controller: main.o net_interface_utils.o
-	$(CC) $(CFLAGS) -o bin/controller $(addprefix bin/,$^)
+controller_dummy: ;
+
+receiver: receiver_dummy
+	make -C receiver
+
+receiver_dummy: ;
 
 clean:
-	$(RM) bin/*
-
+	make -C controller clean
+	make -C receiver clean
