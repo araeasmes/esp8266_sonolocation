@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -g -Wall
-INCLUDES = -I controller/includes
+INCLUDES = -I controller/include
 
 default: controller
 
