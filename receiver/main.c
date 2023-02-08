@@ -34,8 +34,17 @@ $ sudo ifconfig wlp5s0 up
 
 #include <time.h>
 
+#include "espnow_packet.h"
+
+#define DATA_LEN 4
+
 #define MAX_PACKET_LEN 1000
 
+typedef struct timespec stopwatch_t;
+
+struct sound_entry {
+    stopwatch_t timestamp;
+};
 
 /*our MAC address*/
 // {4c:77:cb:1a:58:ce }
@@ -72,17 +81,6 @@ static struct sock_filter bpfcode[FILTER_LENGTH] = {
   { 0x6, 0, 0, 0x00000000 },	// ret #0	// return 'False'
 };
 
-#define DATA_LEN 190
-
-struct my_packet_t {
-    uint8_t skip_1[66];
-    uint8_t mac_from[6];
-    uint8_t mac_to[6];
-    uint8_t skip_2[27];
-    uint8_t data[DATA_LEN];
-    uint8_t skip_3[4];
-} __attribute__((__packed__));
-
 void print_mac(uint8_t mac[6]) {
     printf("%02x:%02x:%02x:%02x:%02x:%02x",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -93,7 +91,7 @@ void print_packet(uint8_t *data, int len)
     printf("----------------------------new packet-----------------------------------\n");
     int i;
 
-    long my_packet_len = sizeof(struct my_packet_t);
+    long my_packet_len = sizeof(espnow_packet_t);
     printf("expected packet len: %ld\n", my_packet_len);
 
     if (len != my_packet_len) {
@@ -106,18 +104,18 @@ void print_packet(uint8_t *data, int len)
         return;
     }
 
-    struct my_packet_t my_packet = *(struct my_packet_t *) data;
+    espnow_packet_t my_packet = *(espnow_packet_t*) data;
     printf("packet from ");
-    print_mac(my_packet.mac_from);
+    print_mac(my_packet.wlan.sa);
     printf(" to ");
-    print_mac(my_packet.mac_to);
+    print_mac(my_packet.wlan.da);
     printf("\n");
 
     printf("data:");
     for (i = 0; i < DATA_LEN; i++) {
         if (i % 16 == 0)
             printf("\n");
-        printf("0x%02x ", my_packet.data[i]);
+        printf("0x%02x ", my_packet.wlan.actionframe.content.payload[i]);
     }
     printf("\n\n");
 }
@@ -152,13 +150,13 @@ int create_raw_socket(char *dev, struct sock_fprog *bpf)
     return fd;
 }
 
-static inline void print_time(struct timespec timer)
+static inline void print_time(stopwatch_t timer)
 {
     printf("%lds %ldns\n", timer.tv_sec, timer.tv_nsec);
 }
 
-static inline struct timespec 
-time_diff(struct timespec timer_end, struct timespec timer_start)
+static inline stopwatch_t 
+time_diff(stopwatch_t timer_end, stopwatch_t timer_start)
 {
     struct timespec timer_res;
     timer_res.tv_sec = timer_end.tv_sec - timer_end.tv_sec;
