@@ -1,0 +1,157 @@
+define USAGE
+Usage: make [command] [VARIABLES]
+
+all......... Build the binaries
+clean....... Clean the binaries
+purge....... Clean the binaries and web stuff
+debug....... Build a .map and .lst file.  Useful for seeing what's going on
+             behind the scenes.
+burn ....... Write firmware to chip using a regular serial port
+burn_cutecom Write firmware to chip using a regular serial port, killing and
+             starting cutecom, a serial terminal
+build_burn . Build the binaries then execute burn_cutecom
+usbburn .... Burn via PRE-RELEASE USB loader (will probably change)
+usbweb ..... Burn webpage by PRE-RELEASE USB loader (will probably change)
+initdefault  Burn default initial data to ROM (may be needed after erase)
+init3v3 .... Burn default values to rom but for use with system_get_vdd33
+erase ...... Totally erase chip.
+wipechip.... Write zeros to the chip
+burnitall .. initdefault + burnweb + burn as a single run.
+dumprom .... read the rom from the chip
+bump_submodule . Update the git submodules
+
+
+More commands: all, clean, purge, dumprom, cleanproject
+endef
+
+.PHONY : all clean purge burn getips help project gitproject cleanproject build_burn burn_cutecom
+
+
+FW_FILE1 = image.elf-0x00000.bin
+FW_FILE2 = image.elf-0x10000.bin
+TARGET = image.elf
+
+
+SRCS +=  esp82xx/fwsrc/uart.c \
+	user/user_main.c \
+    user/partition_util.c
+
+LIBS += main lwip net80211 wpa phy crypto c espnow
+ifneq ($(CUSTOMPP), 1)
+	LIBS += pp
+endif
+
+INCL = $(SDK)/include esp82xx/include user/include
+
+CFLAGS = -mlongcalls -Os $(addprefix -I,$(INCL) $(call uniq, $(patsubst %/,%,$(dir $(SRCS))))) $(OPTS) -DVERSSTR='$(VERSSTR)' -g
+
+LDFLAGS_CORE = -Wl,--relax -Wl,--gc-sections -nostdlib -L$(XTLIB) \
+	-L$(XTGCCLIB) $(addprefix $(SDK)/lib/lib,$(addsuffix .a,$(LIBS))) \
+	$(XTGCCLIB) -T $(LINKERSCRIPT) -T $(SDK)/ld/eagle.rom.addr.v6.ld
+#	-flto -Wl,--relax -Wl,--gc-sections
+
+LINKFLAGS = $(LDFLAGS_CORE) -B$(XTLIB) $(LDFLAGS_POST)
+
+INIT_DATA_PLACE ?= 0x3FC000
+BLANK_DATA_PLACE1 ?= 0x3FB000
+BLANK_DATA_PLACE2 ?= 0x3FE000
+
+ifneq (,$(findstring -DDEBUG,$(OPTS)))
+$(warning Debug is enabled!)
+FLASH_WRITE_FLAGS += --verify
+endif
+
+ifeq ($(SDK),$(PWD)/esp82xx/toolchain/esp_nonos_sdk)
+SDK_DEP := esp82xx/toolchain/esp_nonos_sdk/Makefile
+endif
+
+##########################################################################RULES
+
+help :
+	$(info $(value USAGE))
+	@true
+
+all : $(FW_FILE1) $(FW_FILE2)
+
+build_burn : all burn_cutecom
+
+esp82xx/libgcc_stripped.a :
+	cp $(GCC_FOLDER)/lib/gcc/xtensa-lx106-elf/$(ESP_GCC_VERS)/libgcc.a esp82xx/libgcc_stripped.a
+	$(AR) dv esp82xx/libgcc_stripped.a _muldi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _mulsf3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _divsi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _udivsi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _umodsi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _addsubsf3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _fixdfsi.o
+	#$(AR) dv esp82xx/libgcc_stripped.a _divsf3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _muldf3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _divdf3.o
+	#$(AR) dv esp82xx/libgcc_stripped.a _divsf3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _fixunssfsi.o
+	$(AR) dv esp82xx/libgcc_stripped.a _umoddi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _divdi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _udivdi3.o
+	$(AR) dv esp82xx/libgcc_stripped.a _truncdfsf2.o
+	#$(AR) dv esp82xx/libgcc_stripped.a _divsf3.o
+	#$(AR) dv esp82xx/libgcc_stripped.a _fixsfsi.o
+	$(AR) dv esp82xx/libgcc_stripped.a _floatunsidf.o
+	$(AR) dv esp82xx/libgcc_stripped.a _floatunsisf.o
+	$(AR) dv esp82xx/libgcc_stripped.a _floatsisf.o
+	$(AR) dv esp82xx/libgcc_stripped.a _floatsidf.o
+
+
+$(FW_FILE1) $(FW_FILE2) : $(TARGET)
+	PATH=$(FOLDERPREFIX):$$PATH $(ESPTOOL_PY) elf2image $(TARGET)
+	@#no need to set things like dout, and memory size.  This data is copied from the ESP back to itself on write.
+
+$(TARGET) : $(SRCS) Makefile $(SDK_DEP) $(XTGCCLIB)
+	$(CC) $(CFLAGS) $(SRCS) -flto $(LINKFLAGS) -o $@
+
+debug : $(TARGET)
+	nm -S -n $(TARGET) > image.map
+	$(PREFIX)objdump -S $(TARGET) > image.lst
+	$(PREFIX)size -A $(TARGET) | grep -v debug
+
+burn : $(FW_FILE1) $(FW_FILE2)
+	$(info NOTICE: Currently burning for ESP8266.  If you are on an '85 reconfigure CHIP.)
+	($(ESPTOOL_PY) $(FWBURNFLAGS) --port $(PORT) write_flash -fm dio $(FLASH_WRITE_FLAGS) 0x00000 $(FW_FILE1) 0x10000 $(FW_FILE2))
+burn_cutecom:
+	-killall cutecom
+	$(info NOTICE: Currently burning for ESP8266.  If you are on an '85 reconfigure CHIP.)
+	($(ESPTOOL_PY) $(FWBURNFLAGS) --port $(PORT) write_flash -fm dio $(FLASH_WRITE_FLAGS) 0x00000 $(FW_FILE1) 0x10000 $(FW_FILE2))
+	-cutecom &
+burnitall : $(FW_FILE1) $(FW_FILE2) $(SDK)/bin/blank.bin $(INIT_DATA_ROM)
+	($(ESPTOOL_PY) $(FWBURNFLAGS) --port $(PORT) write_flash -fm dio $(FLASH_WRITE_FLAGS) 0x00000 $(FW_FILE1) 0x10000 $(FW_FILE2) $(BLANK_DATA_PLACE1) $(SDK)/bin/blank.bin $(INIT_DATA_PLACE) $(INIT_DATA_ROM) $(BLANK_DATA_PLACE2) $(SDK)/bin/blank.bin)
+
+wipechip :
+	dd if=/dev/zero of=/tmp/zeroes bs=16M count=1
+	($(ESPTOOL_PY) $(FWBURNFLAGS)  --port $(PORT) write_flash 0x0 /tmp/zeroes)
+
+clean :
+	$(RM) $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(SRCS))) $(TARGET) image.map image.lst $(CLEAN_EXTRA)
+
+dumprom :
+	($(ESPTOOL_PY) $(FWBURNFLAGS)  --port $(PORT) read_flash 0 1048576 dump.bin)
+
+initdefault :
+	$(ESPTOOL_PY) $(BURNFLAGS) --port $(PORT) write_flash $(INIT_DATA_PLACE) $(INIT_DATA_ROM)
+
+init3v3 :
+	$(ESPTOOL_PY) $(BURNFLAGS) --port $(PORT) write_flash $(INIT_DATA_PLACE) esp82xx/data/esp_init_data_adc33.bin
+
+erase:
+	$(ESPTOOL_PY) $(BURNFLAGS) --port $(PORT) erase_flash
+
+purge : clean
+	$(RM) $(FW_FILE1) $(FW_FILE2) 
+
+bump_submodule :
+	cd esp82xx; git pull origin master; git submodule update --init --recursive; cd ..
+
+ifeq ($(SDK),$(PWD)/esp82xx/toolchain/esp_nonos_sdk)
+$(SDK_DEP) :
+	@echo "Warning: SDK is missing, trying to get it from github:" >&2
+	@cd esp82xx && git submodule update --init --recursive
+endif
+
