@@ -56,7 +56,7 @@ struct IEEE80211_wlan {
     uint8_t bssid[6];          //0x84, 0xf3, 0xeb, 0x73, 0x55, 0x0d
     uint16_t seq;              //0x70, 0x51
 	struct IEEE80211_actionframe actionframe;
-    uint32_t fcs;				//Random values : will be recalculated by the hrdw.
+    uint32_t fcs;				// fcs
 } __attribute__((__packed__));
 
 typedef struct {
