@@ -32,81 +32,15 @@ $ sudo ifconfig wlp5s0 up
 #include <assert.h>
 #include <linux/filter.h>
 #include <string.h>
-#include <time.h>
 
 #include "espnow_packet.h"
-
-#define DATA_LEN 4
+#include "localizator.h"
 
 #define MAX_PACKET_LEN 1000
-
-typedef struct timespec stopwatch_t;
-
-static inline void print_time(stopwatch_t timer)
-{
-    printf("%lds %ldns\n", timer.tv_sec, timer.tv_nsec);
-}
-
-stopwatch_t time_diff(stopwatch_t timer_end, stopwatch_t timer_start)
-{
-    stopwatch_t timer_res;
-    timer_res.tv_sec = timer_end.tv_sec - timer_end.tv_sec;
-    timer_res.tv_nsec = timer_end.tv_nsec - timer_start.tv_nsec;
-    if (timer_res.tv_nsec < 0) 
-    {
-        timer_res.tv_sec -= 1;
-        timer_res.tv_nsec += 1000 * 1000 * 1000;
-    }
-    return timer_res;
-}
-
-struct sound_entry {
-    stopwatch_t timestamp;
-    int32_t mcu_ind;
-};
-
-#define STORAGE_STEP 256 
-
-struct storage {
-    struct sound_entry *data;
-    uint32_t cnt;
-    uint32_t size;
-}; 
-
-void zero_storage(struct storage *s) {
-    s->data = NULL;
-    s->cnt = 0;
-    s->size = 0;
-}
-
-// todo: change return type and error check
-void add_entry(struct storage *s, struct sound_entry entry) {
-    if (s->cnt == s->size) {
-        uint32_t new_size = s->size + STORAGE_STEP;
-        struct sound_entry *new_data = realloc(s->data, sizeof(struct sound_entry) * new_size);
-        if (!new_data) {
-            fprintf(stderr, "failed to allocate memory for new entry\n");
-            return;
-        }
-        s->data = new_data;
-        s->size = new_size;
-    }
-    s->data[s->cnt] = entry;
-    s->cnt++;
-}
-
-void clean_storage(struct storage *s) {
-    free(s->data);
-    s->data = NULL;
-    s->cnt = 0;
-    s->size = 0;
-}
-
 
 #define MAX_MCUS 100
 static uint8_t mac_mapping[MAX_MCUS][6];
 static int32_t stored_macs = 0;
-
 
 void process_packet(struct storage *s, uint8_t *data, int len) 
 {
@@ -146,12 +80,16 @@ void process_packet(struct storage *s, uint8_t *data, int len)
     struct sound_entry entry;
     entry.timestamp = timestamp;
     entry.mcu_ind = mac_ind;
+    entry.cntr = p->wlan.actionframe.content.payload.cntr;
 
     add_entry(s, entry);
 
     printf("packet from %d\n", mac_ind);
     printf("received at:\n");
     print_time(timestamp);
+
+    match_signals(s);
+
 }
 
 /*our MAC address*/
@@ -221,10 +159,11 @@ void print_packet(uint8_t *data, int len)
     printf("\n");
 
     printf("data:");
+    uint8_t *raw_payload = (uint8_t *) &my_packet.wlan.actionframe.content.payload;
     for (i = 0; i < DATA_LEN; i++) {
         if (i % 16 == 0)
             printf("\n");
-        printf("0x%02x ", my_packet.wlan.actionframe.content.payload[i]);
+        printf("0x%02x ", raw_payload[i]);
     }
     printf("\n\n");
 }

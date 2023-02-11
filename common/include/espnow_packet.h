@@ -1,6 +1,8 @@
 #ifndef _ESPNOW_PACKET
 #define _ESPNOW_PACKET
 
+#include "payload.h"
+
 #ifndef DATA_LEN
 #define DATA_LEN 4
 #endif // DATA_LEN
@@ -37,8 +39,7 @@ struct IEEE80211_vendorspecific {
 	uint8_t	OUI[3];			//0x18,0xfe, 0x34
 	uint8_t type;			//0x04
 	uint8_t version;		//0x01
-	uint8_t payload[DATA_LEN];
-	
+    struct payload_t payload;
 } __attribute__((__packed__));
 
 struct IEEE80211_actionframe {
